@@ -1,0 +1,66 @@
+name: Gerar APK mundo calmo
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extrair projeto do ZIP
+        run: |
+          if [ ! -f "package.json" ]; then
+            ZIP_FILE=$(find . -maxdepth 1 -name '*.zip' | head -n 1)
+            mkdir -p /tmp/app_src
+            unzip -o "$ZIP_FILE" -d /tmp/app_src
+            PROJ_DIR=$(dirname "$(find /tmp/app_src -maxdepth 3 -name 'package.json' | head -n 1)")
+            cp -a "$PROJ_DIR/." .
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Instalar Android SDK 36
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Instalar e gerar build
+        run: |
+          npm install --legacy-peer-deps
+          npm run build
+
+      - name: Preparar Android
+        run: |
+          if [ ! -f "capacitor.config.json" ]; then
+            npx cap init "mundo calmo" "com.mundocalmo.app" --web-dir dist
+          fi
+          if [ ! -d "android" ]; then
+            npm install --legacy-peer-deps @capacitor/core @capacitor/cli @capacitor/android
+            npx cap add android
+          else
+            npx cap sync android
+          fi
+
+      - name: Gerar APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Preparar APK final
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk mundo-calmo.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mundo-calmo-apk
+          path: mundo-calmo.apk
